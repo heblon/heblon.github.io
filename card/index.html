@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>QR Code Generator</title>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 flex justify-center items-center min-h-screen">
+
+<div class="bg-white shadow-lg rounded-lg p-8 w-full max-w-lg">
+    <h2 class="text-2xl font-bold text-center text-gray-800 mb-6">QR Code Generator</h2>
+
+    <form id="vcardForm" class="space-y-4">
+        <input type="text" id="firstName" placeholder="First Name" class="input w-full p-2 border rounded">
+        <input type="text" id="lastName" placeholder="Last Name" class="input w-full p-2 border rounded">
+        <input type="text" id="company" placeholder="Company" class="input w-full p-2 border rounded">
+        <input type="text" id="jobTitle" placeholder="Job Title" class="input w-full p-2 border rounded">
+        <input type="text" id="phone" placeholder="Phone Number" class="input w-full p-2 border rounded">
+        <input type="email" id="email" placeholder="Email" class="input w-full p-2 border rounded">
+        <input type="url" id="website" placeholder="Website (optional)" class="input w-full p-2 border rounded">
+        <input type="text" id="address" placeholder="Address" class="input w-full p-2 border rounded">
+        
+        <label class="block text-gray-600 font-medium">Upload Logo (optional)</label>
+        <input type="file" id="logoInput" accept="image/png, image/jpeg" class="file-input w-full border rounded p-2">
+
+        <label class="block text-gray-600 font-medium">Logo Size</label>
+        <input type="range" id="logoSize" min="10" max="50" value="25" step="5" class="w-full" oninput="updateSizeValue()">
+        <span id="sizeValue" class="text-sm text-gray-500">25%</span>
+
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-gray-600 font-medium">Foreground Color</label>
+                <input type="color" id="fgColor" value="#000000" class="w-full h-10 rounded">
+            </div>
+            <div>
+                <label class="block text-gray-600 font-medium">Background Color</label>
+                <input type="color" id="bgColor" value="#FFFFFF" class="w-full h-10 rounded">
+            </div>
+        </div>
+
+        <button type="button" onclick="generateQRCode()" class="w-full bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
+            Generate QR Code
+        </button>
+    </form>
+
+    <div id="loading" class="hidden text-center text-gray-500 mt-4 animate-pulse">Generating QR Code...</div>
+</div>
+
+<!-- Modal with Perfectly Square QR Code -->
+<div id="qrModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden flex justify-center items-center">
+    <div id="modalContainer" class="bg-white p-4 rounded-lg shadow-lg text-center flex flex-col justify-center items-center relative">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">Your QR Code</h3>
+        <img id="qrcodeImage" class="shadow-lg rounded-lg max-w-full" alt="Generated QR Code">
+        <a id="downloadLink" class="mt-4 px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition hidden">
+            Download QR Code
+        </a>
+        <button onclick="closeModal()" class="absolute top-4 right-4 text-gray-500 hover:text-gray-700 text-3xl">&times;</button>
+    </div>
+</div>
+
+<script type="text/javascript">
+    let pyodideReadyPromise = loadPyodide();
+    
+    (async function startup(){
+      let pyodide = await pyodideReadyPromise;
+        await pyodide.loadPackage(['micropip']);
+        await pyodide.runPythonAsync(`
+import micropip
+await micropip.install(['qrcode', 'Pillow'])
+`);
+    })();
+
+    function updateSizeValue() {
+        document.getElementById("sizeValue").textContent = document.getElementById("logoSize").value + "%";
+    }
+
+    function closeModal() {
+        document.getElementById("qrModal").classList.add("hidden");
+    }
+
+    async function generateQRCode() {
+        document.getElementById("loading").classList.remove("hidden");
+
+        let pyodide = await pyodideReadyPromise;
+        await pyodide.loadPackage(['micropip']);
+        await pyodide.runPythonAsync(`
+import micropip
+await micropip.install(['qrcode', 'Pillow'])
+`);
+
+        const firstName = document.getElementById('firstName').value;
+        const lastName = document.getElementById('lastName').value;
+        const company = document.getElementById('company').value;
+        const jobTitle = document.getElementById('jobTitle').value;
+        const phone = document.getElementById('phone').value;
+        const email = document.getElementById('email').value;
+        const website = document.getElementById('website').value;
+        const address = document.getElementById('address').value;
+        const logoSizePercentage = document.getElementById("logoSize").value / 100;
+        const fgColor = document.getElementById("fgColor").value;
+        const bgColor = document.getElementById("bgColor").value;
+
+        const vcard = `BEGIN:VCARD
+VERSION:3.0
+N:${lastName};${firstName}
+FN:${firstName} ${lastName}
+ORG:${company}
+TITLE:${jobTitle}
+TEL;TYPE=cell:${phone}
+EMAIL:${email}
+ADR:${address}
+URL:${website}
+END:VCARD`;
+
+        const logoFile = document.getElementById('logoInput').files[0];
+        let logoData = null;
+        if (logoFile) {
+            const buffer = await logoFile.arrayBuffer();
+            logoData = new Uint8Array(buffer);
+        }
+
+        pyodide.globals.set("vcard", vcard);
+        pyodide.globals.set("logo_data", logoData);
+        pyodide.globals.set("logo_size_percentage", logoSizePercentage);
+        pyodide.globals.set("fg_color", fgColor);
+        pyodide.globals.set("bg_color", bgColor);
+
+        await pyodide.runPythonAsync(`
+from io import BytesIO
+import qrcode
+from PIL import Image
+
+qr = qrcode.QRCode(version=3, error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=10, border=4)
+qr.add_data(vcard)
+qr.make(fit=True)
+
+img = qr.make_image(fill_color=fg_color, back_color=bg_color).convert("RGB")
+
+if logo_data:
+    logo_data = bytes(logo_data)
+    logo = Image.open(BytesIO(logo_data))
+    logo_size = int(img.size[0] * logo_size_percentage)
+    logo.thumbnail((logo_size, logo_size))
+    img_w, img_h = img.size
+    logo_w, logo_h = logo.size
+    position = ((img_w - logo_w) // 2, (img_h - logo_h) // 2)
+    img.paste(logo, position, mask=logo if logo.mode == "RGBA" else None)
+
+buffer = BytesIO()
+img.save(buffer, format="PNG")
+qr_code_bytes = buffer.getvalue()
+`);
+
+        const qrCodeBytes = pyodide.globals.get("qr_code_bytes").toJs();
+        const url = URL.createObjectURL(new Blob([qrCodeBytes], { type: "image/png" }));
+
+        document.getElementById("loading").classList.add("hidden");
+        document.getElementById("qrModal").classList.remove("hidden");
+        document.getElementById("qrcodeImage").src = url;
+        document.getElementById("downloadLink").href = url;
+        document.getElementById("downloadLink").classList.remove("hidden");
+    }
+</script>
+
+</body>
+</html>
+
