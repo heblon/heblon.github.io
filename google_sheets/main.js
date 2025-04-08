@@ -12,13 +12,17 @@ let destSheetId = null;
 
 // ✅ Setup DuckDB with readiness tracking
 async function setupDuckDB() {
-  console.log("⏳ Initializing DuckDB...");
-  const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+  console.log("⏳ Initializing DuckDB (safe mode)...");
+
+  const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles(), {
+    useBundledWorker: false
+  });
+
   const db = new duckdb.AsyncDuckDB();
-  await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+  await db.instantiate(bundle.mainModule);
   conn = await db.connect();
   duckReady = true;
-  console.log("✅ DuckDB is ready!");
+  console.log("✅ DuckDB is ready (no-worker mode)!");
 }
 await setupDuckDB();
 
