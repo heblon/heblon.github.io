@@ -4,9 +4,25 @@ const API_KEY = "AIzaSyAjK2HdF0KnuKpdCns7sba-YVv3YgL29FY";
 const CLIENT_ID = "561411244038-36ta31kbti2gmnugj5cvqvhb6ro15ors.apps.googleusercontent.com";
 
 let conn;
-let accessToken = null;
 let sourceSheetId = null;
 let destSheetId = null;
+let accessToken = null;
+
+const tokenClient = google.accounts.oauth2.initTokenClient({
+  client_id: CLIENT_ID,
+  scope: "https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets",
+  callback: (response) => {
+    if (response.error) {
+      console.error(response);
+      alert("Error getting access token.");
+      return;
+    }
+    accessToken = response.access_token;
+    gapi.client.setToken({ access_token: accessToken });
+    loadSpreadsheets(); // continue app logic
+  },
+});
+
 
 async function setupDuckDB() {
   const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
@@ -16,20 +32,9 @@ async function setupDuckDB() {
 }
 await setupDuckDB();
 
-window.handleCredentialResponse = async (response) => {
-  accessToken = response.credential;
-
-  await gapi.load("client", async () => {
-    await gapi.client.init({
-      apiKey: API_KEY,
-      discoveryDocs: [
-        "https://sheets.googleapis.com/$discovery/rest?version=v4",
-        "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest",
-      ],
-    });
-
-    gapi.client.setToken({ access_token: accessToken });
-    await loadSpreadsheets();
+window.onload = () => {
+  document.querySelector('.g_id_signin')?.addEventListener('click', () => {
+    tokenClient.requestAccessToken(); // opens popup to grant access
   });
 };
 
