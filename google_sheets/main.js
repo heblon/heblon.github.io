@@ -4,6 +4,7 @@ const API_KEY = "AIzaSyAjK2HdF0KnuKpdCns7sba-YVv3YgL29FY";
 const CLIENT_ID = "561411244038-36ta31kbti2gmnugj5cvqvhb6ro15ors.apps.googleusercontent.com";
 
 let conn;
+let accessToken = null;
 let sourceSheetId = null;
 let destSheetId = null;
 
@@ -15,19 +16,20 @@ async function setupDuckDB() {
 }
 await setupDuckDB();
 
-document.getElementById("login").onclick = () => {
-  gapi.load("client:auth2", async () => {
+window.handleCredentialResponse = async (response) => {
+  accessToken = response.credential;
+
+  await gapi.load("client", async () => {
     await gapi.client.init({
       apiKey: API_KEY,
-      clientId: CLIENT_ID,
-      scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/drive.file",
       discoveryDocs: [
         "https://sheets.googleapis.com/$discovery/rest?version=v4",
         "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest",
       ],
     });
-    await gapi.auth2.getAuthInstance().signIn();
-    loadSpreadsheets();
+
+    gapi.client.setToken({ access_token: accessToken });
+    await loadSpreadsheets();
   });
 };
 
@@ -36,18 +38,22 @@ async function loadSpreadsheets() {
     q: "mimeType='application/vnd.google-apps.spreadsheet'",
     fields: "files(id, name)",
   });
+
   const sourceSelect = document.getElementById("source-select");
   const destSelect = document.getElementById("dest-select");
   sourceSelect.innerHTML = "";
   destSelect.innerHTML = "";
+
   res.result.files.forEach(f => {
     const opt1 = new Option(f.name, f.id);
     const opt2 = new Option(f.name, f.id);
     sourceSelect.appendChild(opt1);
     destSelect.appendChild(opt2);
   });
+
   sourceSelect.onchange = e => (sourceSheetId = e.target.value);
   destSelect.onchange = e => (destSheetId = e.target.value);
+
   if (res.result.files.length > 0) {
     sourceSheetId = res.result.files[0].id;
     destSheetId = res.result.files[0].id;
@@ -91,12 +97,14 @@ document.getElementById("save").onclick = async () => {
   const result = await conn.query(sql);
   const rows = result.toArray();
   const values = [result.schema.fields.map(f => f.name), ...rows.map(Object.values)];
+
   await gapi.client.sheets.spreadsheets.values.update({
     spreadsheetId: destSheetId,
     range: "Sheet1!A1",
     valueInputOption: "RAW",
     resource: { values },
   });
+
   alert("Query result saved to spreadsheet.");
 };
 

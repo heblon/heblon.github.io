@@ -1,15 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>DuckDB + Google Sheets</title>
-  <script src="https://apis.google.com/js/api.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script type="module" src="main.js"></script>
 </head>
 <body>
   <h1>DuckDB + Google Sheets</h1>
 
-  <button id="login">Login with Google</button>
+  <!-- GIS Login Button -->
+  <div id="g_id_onload"
+       data-client_id="YOUR_CLIENT_ID.apps.googleusercontent.com"
+       data-context="use"
+       data-ux_mode="popup"
+       data-callback="handleCredentialResponse"
+       data-auto_select="false"
+       data-itp_support="true">
+  </div>
+
+  <div class="g_id_signin"
+       data-type="standard"
+       data-shape="rectangular"
+       data-theme="outline"
+       data-text="sign_in_with"
+       data-size="large"
+       data-logo_alignment="left">
+  </div>
 
   <h2>Choose Source Spreadsheet</h2>
   <select id="source-select"></select>
