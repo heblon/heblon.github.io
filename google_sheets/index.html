@@ -14,9 +14,20 @@
 
 <button id="login-button">🔐 Sign in with Google</button>
 
-  <h2>Choose Source Spreadsheet</h2>
-  <select id="source-select"></select>
-  <button id="load">Load Sheet</button>
+ 
+<h2>Choose Source Spreadsheet</h2>
+<select id="source-select"></select><br><br>
+
+<label for="sheet-tab">Choose Tab:</label>
+<select id="tab-select"></select><br><br>
+
+<label for="range-input">Enter Range (e.g., A1:Z100):</label>
+<input type="text" id="range-input" value="A1:Z100"><br><br>
+
+<button id="load">Load Sheet</button>
+
+
+
 
   <h2>SQL Query</h2>
   <textarea id="sql" rows="5" cols="60">SELECT * FROM sheet_data;</textarea>

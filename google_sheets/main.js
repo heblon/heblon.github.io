@@ -70,31 +70,53 @@ async function loadSpreadsheets() {
   });
 
   const sourceSelect = document.getElementById("source-select");
-  const destSelect = document.getElementById("dest-select");
   sourceSelect.innerHTML = "";
-  destSelect.innerHTML = "";
 
   res.result.files.forEach(f => {
-    const opt1 = new Option(f.name, f.id);
-    const opt2 = new Option(f.name, f.id);
-    sourceSelect.appendChild(opt1);
-    destSelect.appendChild(opt2);
+    const option = new Option(f.name, f.id);
+    sourceSelect.appendChild(option);
   });
 
-  sourceSelect.onchange = e => (sourceSheetId = e.target.value);
-  destSelect.onchange = e => (destSheetId = e.target.value);
+  sourceSelect.onchange = async e => {
+    sourceSheetId = e.target.value;
+    await populateTabs(sourceSheetId);
+  };
 
   if (res.result.files.length > 0) {
     sourceSheetId = res.result.files[0].id;
-    destSheetId = res.result.files[0].id;
+    await populateTabs(sourceSheetId);
   }
 }
 
+
+
+async function populateTabs(spreadsheetId) {
+  const meta = await gapi.client.sheets.spreadsheets.get({
+    spreadsheetId: spreadsheetId,
+  });
+
+  const tabSelect = document.getElementById("tab-select");
+  tabSelect.innerHTML = "";
+
+  meta.result.sheets.forEach(sheet => {
+    const name = sheet.properties.title;
+    const option = new Option(name, name);
+    tabSelect.appendChild(option);
+  });
+}
+
+
+
 // 5. Load selected Google Sheet into DuckDB
 async function loadSheet() {
+  const tabName = document.getElementById("tab-select").value;
+  const userRange = document.getElementById("range-input").value || "A1:Z100";
+
+  const fullRange = `${tabName}!${userRange}`;
+
   const res = await gapi.client.sheets.spreadsheets.values.get({
     spreadsheetId: sourceSheetId,
-    range: "Sheet1!A1:Z1000",
+    range: fullRange,
   });
 
   const values = res.result.values;
