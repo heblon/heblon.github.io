@@ -5,22 +5,14 @@
   <title>DuckDB + Google Sheets</title>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://apis.google.com/js/api.js"></script>
-  <script type="module" src="main.js?v=3"></script>
+  <script type="module" src="main.js?v=31"></script>
 </head>
 <body>
   <h1>DuckDB + Google Sheets</h1>
 
   <!-- Google Sign-In Button -->
 
-
-  <div class="g_id_signin"
-       data-type="standard"
-       data-shape="rectangular"
-       data-theme="outline"
-       data-text="sign_in_with"
-       data-size="large"
-       data-logo_alignment="left">
-  </div>
+<button id="login-button">🔐 Sign in with Google</button>
 
   <h2>Choose Source Spreadsheet</h2>
   <select id="source-select"></select>

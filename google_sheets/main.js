@@ -56,9 +56,10 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("save").onclick = saveResults;
 
   // Start login by requesting access token
-  document.querySelector(".g_id_signin")?.addEventListener("click", () => {
-    tokenClient.requestAccessToken();
-  });
+  document.getElementById("login-button").addEventListener("click", () => {
+        tokenClient.requestAccessToken();
+    });
+
 });
 
 // 4. Load available spreadsheets from Drive
