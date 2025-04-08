@@ -103,9 +103,19 @@ async function saveResults() {
   const sql = document.getElementById("sql").value;
   const result = await conn.query(sql);
   const rows = result.toArray();
-  const values = [result.schema.fields.map(f => f.name), ...rows.map(Object.values)];
+  const values = [
+    result.schema.fields.map(f => f.name),
+    ...rows.map(row => Object.values(row))
+  ];
 
-  await gapi.client.sheets
-::contentReference[oaicite:11]{index=11}
+  await gapi.client.sheets.spreadsheets.values.update({
+    spreadsheetId: destSheetId,
+    range: "Sheet1!A1",
+    valueInputOption: "RAW",
+    resource: { values },
+  });
+
+  alert("Query result saved to spreadsheet.");
+}
  
 
