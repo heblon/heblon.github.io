@@ -78,8 +78,9 @@ async function loadSpreadsheets() {
   });
 
   sourceSelect.onchange = async e => {
-    sourceSheetId = e.target.value;
-    await populateTabs(sourceSheetId);
+  sourceSheetId = e.target.value;
+  console.log(`📄 Selected Spreadsheet: https://docs.google.com/spreadsheets/d/${sourceSheetId}/edit`);
+  await populateTabs(sourceSheetId);
   };
 
   if (res.result.files.length > 0) {
@@ -111,7 +112,6 @@ async function populateTabs(spreadsheetId) {
 async function loadSheet() {
   const tabName = document.getElementById("tab-select").value;
   const userRange = document.getElementById("range-input").value || "A1:Z100";
-
   const fullRange = `${tabName}!${userRange}`;
 
   const res = await gapi.client.sheets.spreadsheets.values.get({
@@ -120,10 +120,30 @@ async function loadSheet() {
   });
 
   const values = res.result.values;
+  if (!values || values.length < 2) {
+    alert("No data found in selected range.");
+    return;
+  }
+
   const [headers, ...rows] = values;
-  await conn.insertCSVFromArrays("sheet_data", [headers, ...rows]);
+  const objects = rows.map(row => {
+    const obj = {};
+    headers.forEach((key, i) => {
+      obj[key] = row[i] ?? null; // fill missing cells with null
+    });
+    return obj;
+  });
+
+  await conn.query("DROP TABLE IF EXISTS sheet_data;");
+  await conn.query(`CREATE TABLE sheet_data (${headers.map(h => `"${h}" TEXT`).join(", ")});`);
+  await conn.insert({
+    tableName: "sheet_data",
+    rows: objects,
+  });
+
   alert("Data loaded into DuckDB.");
 }
+
 
 // 6. Run SQL query
 async function runQuery() {
