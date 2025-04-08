@@ -12,17 +12,17 @@ let destSheetId = null;
 
 // ✅ Setup DuckDB with readiness tracking
 async function setupDuckDB() {
-  console.log("⏳ Initializing DuckDB (safe mode)...");
+  console.log("⏳ Initializing DuckDB (safe no-thread mode)...");
 
-  const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles(), {
-    useBundledWorker: false
-  });
+  const JS_BUNDLE = {
+    mainModule: "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-browser-eh.wasm",
+  };
 
   const db = new duckdb.AsyncDuckDB();
-  await db.instantiate(bundle.mainModule);
+  await db.instantiate(JS_BUNDLE.mainModule);
   conn = await db.connect();
   duckReady = true;
-  console.log("✅ DuckDB is ready (no-worker mode)!");
+  console.log("✅ DuckDB is ready (single-thread safe)!");
 }
 await setupDuckDB();
 
