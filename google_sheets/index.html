@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>DuckDB + Google Sheets via Pyodide</title>
+</head>
+<body>
+  <h1>DuckDB + Google Sheets</h1>
+  <button id="auth">Login with Google</button>
+  <button id="load-data">Load Sheet into DuckDB</button>
+  <textarea id="sql">SELECT * FROM sheet_data</textarea>
+  <button id="run-query">Run Query</button>
+  <pre id="results"></pre>
+  <button id="export">Export to Google Sheets</button>
+
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
+
