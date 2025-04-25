@@ -325,11 +325,10 @@ async function loadSheet() {
   hideStatus(loadStatus);
   showLoading("⏳ Loading data from sheet...");
   loadButton.disabled = true;
-  // Hide column names area when starting a new load
   columnNamesArea.style.display = 'none';
   columnNamesList.textContent = '';
   copyColumnsButton.disabled = true;
-  copyColumnsButton.textContent = '📋 Copy'; // Reset button text
+  copyColumnsButton.textContent = '📋 Copy';
 
   // --- Initial Checks ---
   if (!duckReady) { /* ... */ displayError("DuckDB not ready."); hideLoading(); loadButton.disabled = false; return; }
@@ -361,109 +360,107 @@ async function loadSheet() {
           console.warn("🚀 LoadSheet STEP 3.1: No data returned from Sheets API.");
           outputArea.textContent = "No data found in range.";
           try { await conn.query("DROP TABLE IF EXISTS sheet_data;"); } catch(e){}
-          // No return here, proceed to finally block
-      } else {
-          console.log(`🚀 LoadSheet STEP 3.5: Received ${values.length} rows from Sheets.`);
-          showLoading("⏳ Processing data and loading into DuckDB...");
+          return; // Stop processing if no data
+      }
+      console.log(`🚀 LoadSheet STEP 3.5: Received ${values.length} rows from Sheets.`);
+      showLoading("⏳ Processing data and loading into DuckDB...");
 
-          // --- Process Data for DuckDB ---
-          console.log("🚀 LoadSheet STEP 4: Processing fetched data for DuckDB...");
-          const headers = values[0].map((h, idx) => String(h || `col_${idx}_${Date.now()}`));
-          const dataRows = values.length > 1 ? values.slice(1) : [];
-          console.log(`🚀 LoadSheet STEP 4.1: Headers identified (${headers.length}):`, headers);
+      // --- Process Data for DuckDB ---
+      console.log("🚀 LoadSheet STEP 4: Processing fetched data for DuckDB...");
+      const headers = values[0].map((h, idx) => String(h || `col_${idx}_${Date.now()}`));
+      const dataRows = values.length > 1 ? values.slice(1) : [];
+      console.log(`🚀 LoadSheet STEP 4.1: Headers identified (${headers.length}):`, headers);
+      columnNamesList.textContent = headers.join(', ');
+      columnNamesArea.style.display = 'block';
+      copyColumnsButton.disabled = false;
 
-          // +++ NEW: Display Column Names +++
-          columnNamesList.textContent = headers.join(', '); // Display comma-separated
-          columnNamesArea.style.display = 'block'; // Show the area
-          copyColumnsButton.disabled = false; // Enable copy button
-          // +++ END NEW +++
+      // --- DuckDB Operations within Transaction ---
+      console.log("🚀 LoadSheet STEP 5: Starting DuckDB transaction...");
+      await conn.query("BEGIN TRANSACTION;");
+      transactionStarted = true;
+      console.log("🚀 LoadSheet STEP 5.0.1: BEGIN TRANSACTION executed.");
 
-          const objects = dataRows.map((row) => {
-              const obj = {};
-              headers.forEach((h, i) => { obj[h] = (row && row[i] !== undefined && row[i] !== null) ? row[i] : null; });
-              return obj;
-          });
-          console.log(`🚀 LoadSheet STEP 4.2: Converted ${objects.length} data rows to objects.`);
+      const dropSQL = "DROP TABLE IF EXISTS sheet_data;";
+      console.log("🚀 LoadSheet STEP 5.1: Attempting to execute:", dropSQL);
+      await conn.query(dropSQL);
+      console.log("🚀 LoadSheet STEP 5.2: Successfully executed:", dropSQL);
 
-          // --- DuckDB Operations within Transaction ---
-          console.log("🚀 LoadSheet STEP 5: Starting DuckDB transaction...");
-          await conn.query("BEGIN TRANSACTION;");
-          transactionStarted = true;
-          console.log("🚀 LoadSheet STEP 5.0.1: BEGIN TRANSACTION executed.");
+      const quotedHeaders = headers.map(h => `"${h.replace(/"/g, '""')}"`);
+      const createTableSQL = `CREATE TABLE sheet_data (${quotedHeaders.map(h => `${h} VARCHAR`).join(", ")});`;
+      console.log("🚀 LoadSheet STEP 5.3: Attempting to execute:", createTableSQL);
+      await conn.query(createTableSQL);
+      console.log("🚀 LoadSheet STEP 5.4: Successfully executed:", createTableSQL);
 
-          const dropSQL = "DROP TABLE IF EXISTS sheet_data;";
-          console.log("🚀 LoadSheet STEP 5.1: Attempting to execute:", dropSQL);
-          await conn.query(dropSQL);
-          console.log("🚀 LoadSheet STEP 5.2: Successfully executed:", dropSQL);
+      // --- NEW: Batch INSERT INTO ... VALUES ---
+      if (dataRows.length > 0) {
+          const BATCH_SIZE = 500; // Insert 500 rows at a time (tune as needed)
+          let valuesBatch = []; // Array to hold VALUES strings for the current batch
+          console.log(`🚀 LoadSheet STEP 5.5: Starting batched INSERT INTO (batch size: ${BATCH_SIZE})...`);
+          let totalInserted = 0;
 
-          const quotedHeaders = headers.map(h => `"${h.replace(/"/g, '""')}"`);
-          const createTableSQL = `CREATE TABLE sheet_data (${quotedHeaders.map(h => `${h} VARCHAR`).join(", ")});`;
-          console.log("🚀 LoadSheet STEP 5.3: Attempting to execute:", createTableSQL);
-          await conn.query(createTableSQL);
-          console.log("🚀 LoadSheet STEP 5.4: Successfully executed:", createTableSQL);
-
-          // --- Use INSERT INTO ... VALUES for ALL rows (as Arrow was problematic) ---
-          if (objects.length > 0) {
-              const numRowsToInsert = objects.length;
-              console.log(`🚀 LoadSheet STEP 5.5: Attempting to insert ${numRowsToInsert} rows using conn.query(INSERT INTO)...`);
-
-              for (let i = 0; i < numRowsToInsert; i++) {
-                  const rowObject = objects[i];
-                  const valuesString = headers.map(h => {
-                      const value = rowObject[h];
-                      if (value === null || value === undefined) { return "NULL"; }
-                      const escapedValue = String(value).replace(/'/g, "''");
-                      return `'${escapedValue}'`;
-                  }).join(", ");
-
-                  const insertSQL = `INSERT INTO sheet_data (${quotedHeaders.join(", ")}) VALUES (${valuesString});`;
-                  if (i === 0 || (i + 1) % 100 === 0 || i === numRowsToInsert - 1) {
-                     console.log(`   Executing INSERT for row ${i + 1}/${numRowsToInsert}...`);
+          for (let i = 0; i < dataRows.length; i++) {
+              const row = dataRows[i];
+              // Construct the single VALUES string for this row: ('val1', 'val2', NULL)
+              const valuesString = "(" + headers.map((h, colIndex) => {
+                  const value = (row && row[colIndex] !== undefined && row[colIndex] !== null) ? row[colIndex] : null;
+                  if (value === null) {
+                      return "NULL";
                   }
+                  const escapedValue = String(value).replace(/'/g, "''");
+                  return `'${escapedValue}'`;
+              }).join(", ") + ")";
+              valuesBatch.push(valuesString);
+
+              // If batch is full or it's the last row, execute the insert
+              if (valuesBatch.length >= BATCH_SIZE || i === dataRows.length - 1) {
+                  const batchInsertSQL = `INSERT INTO sheet_data (${quotedHeaders.join(", ")}) VALUES ${valuesBatch.join(", ")};`;
+                  console.log(`   Executing INSERT for rows ${totalInserted + 1} to ${totalInserted + valuesBatch.length}...`);
                   try {
-                      await conn.query(insertSQL);
+                      await conn.query(batchInsertSQL);
+                      totalInserted += valuesBatch.length;
                   } catch (insertErr) {
-                      console.error(`   ERROR inserting row ${i}:`, insertErr);
-                      console.error(`   Failed SQL (showing first 500 chars): ${insertSQL.substring(0, 500)}...`);
-                      throw insertErr;
+                      console.error(`   ERROR inserting batch starting at row ${totalInserted + 1}:`, insertErr);
+                      console.error(`   Failed SQL (showing first 500 chars): ${batchInsertSQL.substring(0, 500)}...`);
+                      throw insertErr; // Stop if any batch insert fails
                   }
+                  valuesBatch = []; // Reset batch
               }
-              console.log(`🚀 LoadSheet STEP 5.7: Successfully executed ${numRowsToInsert} INSERT statements.`);
-
-          } else {
-              console.log("🚀 LoadSheet STEP 5.5-SKIP: No data rows to insert.");
           }
-          // --- END INSERT INTO ---
+          console.log(`🚀 LoadSheet STEP 5.7: Successfully executed batched INSERT statements for ${totalInserted} rows.`);
 
-          // --- Commit Transaction ---
-          console.log("🚀 LoadSheet STEP 5.8: Attempting to COMMIT transaction...");
-          await conn.query("COMMIT;");
-          transactionStarted = false;
-          console.log("🚀 LoadSheet STEP 5.8.1: COMMIT executed successfully.");
+      } else {
+          console.log("🚀 LoadSheet STEP 5.5-SKIP: No data rows to insert.");
+      }
+      // --- END NEW BATCH INSERT ---
 
-          // --- Row Count Check (AFTER COMMIT) ---
-          let finalRowCount = 0;
-          try {
-              console.log("🚀 LoadSheet STEP 5.9: Attempting row count check (post-commit)...");
-              const countResult = await conn.query("SELECT COUNT(*) as count FROM sheet_data;");
-              const countArray = countResult.toArray();
-              if (countArray && countArray.length > 0) {
-                  finalRowCount = Number(countArray[0].count);
-                  console.log(`🚀 LoadSheet STEP 5.9.1: Post-commit count check result: ${finalRowCount} rows.`);
-                  if (finalRowCount !== objects.length) {
-                      console.warn(`   WARN: Post-commit count (${finalRowCount}) does not match expected objects (${objects.length})!`);
-                      showStatus(loadStatus, `Warning: Loaded ${finalRowCount} rows, expected ${objects.length}.`, true);
-                  } else {
-                      showStatus(loadStatus, `✅ Successfully loaded ${finalRowCount} rows into table 'sheet_data'.`);
-                  }
-              } else { /* ... count check failed log ... */ }
-          } catch (countErr) { /* ... count check error log ... */ }
+      // --- Commit Transaction ---
+      console.log("🚀 LoadSheet STEP 5.8: Attempting to COMMIT transaction...");
+      await conn.query("COMMIT;");
+      transactionStarted = false;
+      console.log("🚀 LoadSheet STEP 5.8.1: COMMIT executed successfully.");
 
-          // --- Success ---
-          console.log("🚀 LoadSheet STEP 6: DuckDB operations completed successfully.");
-          outputArea.textContent = `Data loaded successfully!\n${objects.length} rows processed and inserted via SQL.\nTable 'sheet_data' created/updated.\nReady to run queries.`;
-          // alert("Data loaded into DuckDB!"); // Replaced by status
-      } // End of else block (if values were found)
+      // --- Row Count Check (AFTER COMMIT) ---
+      let finalRowCount = 0;
+      try {
+          console.log("🚀 LoadSheet STEP 5.9: Attempting row count check (post-commit)...");
+          const countResult = await conn.query("SELECT COUNT(*) as count FROM sheet_data;");
+          const countArray = countResult.toArray();
+          if (countArray && countArray.length > 0) {
+              finalRowCount = Number(countArray[0].count);
+              console.log(`🚀 LoadSheet STEP 5.9.1: Post-commit count check result: ${finalRowCount} rows.`);
+              if (finalRowCount !== dataRows.length) { // Compare with dataRows.length
+                  console.warn(`   WARN: Post-commit count (${finalRowCount}) does not match expected data rows (${dataRows.length})!`);
+                  showStatus(loadStatus, `Warning: Loaded ${finalRowCount} rows, expected ${dataRows.length}.`, true);
+              } else {
+                  showStatus(loadStatus, `✅ Successfully loaded ${finalRowCount} rows into table 'sheet_data'.`);
+              }
+          } else { /* ... count check failed log ... */ }
+      } catch (countErr) { /* ... count check error log ... */ }
+
+      // --- Success ---
+      console.log("🚀 LoadSheet STEP 6: DuckDB operations completed successfully.");
+      outputArea.textContent = `Data loaded successfully!\n${dataRows.length} rows processed and inserted via Batched SQL.\nTable 'sheet_data' created/updated.\nReady to run queries.`;
+      alert("Data loaded into DuckDB!");
 
   } catch (err) { // Catch errors from GAPI, DuckDB operations, or COMMIT
       console.error("🚀 LoadSheet Processing/DB ERR:", err);
@@ -476,13 +473,8 @@ async function loadSheet() {
               console.error("   ERROR during ROLLBACK:", rollbackErr);
           }
       }
-      if (err.result && err.result.error) {
-          displayError(`❌ Failed to get data from sheet '${tab}'. Check range and permissions.`, err.result.error);
-          showStatus(loadStatus, `Error fetching data: ${err.result.error.message || err}`, true);
-      } else {
-          displayError(`❌ Error during sheet loading/processing.`, err);
-          showStatus(loadStatus, `Processing/DB Error: ${err.message || err}`, true);
-      }
+      if (err.result && err.result.error) { /* ... GAPI error reporting ... */ }
+      else { /* ... Other error reporting ... */ }
   } finally {
       hideLoading();
       loadButton.disabled = false;
@@ -819,3 +811,13 @@ window.addEventListener("DOMContentLoaded", async () => {
   console.log("🚀 DOMContentLoaded: Button event listeners attached.");
   console.log("🚀 DOMContentLoaded: Initialization complete.");
 });
+
+
+
+
+
+
+// Improvements
+// 1) each spreadsheet should become an unique table in duckdb and the interface should show the names of the tables and let us know the columns (first 5 rows by clicking)
+// 2) we should be able to create multiple queries and save the results in different duckdb tables, each should be a new div that could read from previous results or new spreadsheets
+// 3) we should be able to choose where to save data in google sheets (new spreadsheet or a specific one [shown when choosing a spreadsheet])
