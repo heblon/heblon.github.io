@@ -1,43 +1,91 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>DuckDB + Google Sheets</title>
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="https://apis.google.com/js/api.js"></script>
-  <script type="module" src="main.js?v=36"></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DuckDB + Google Sheets Query Tool</title>
+    <link href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css?v=2"> <!-- CSS version bump -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
+    <script type="module" src="main.js?v=38"></script> <!-- JS version bump -->
 </head>
 <body>
-  <h1>DuckDB + Google Sheets</h1>
+    <div class="container">
+        <header>
+            <h1>DuckDB + Google Sheets Query Tool</h1>
+            <div id="auth-status">
+                <button id="login-button" class="btn">🔐 Sign in with Google</button>
+            </div>
+            <div id="loading-indicator" class="status-indicator" style="display: none;">⏳ Loading...</div>
+            <div id="error-message" class="status-indicator error" style="display: none;"></div>
+        </header>
 
-  <!-- Google Sign-In Button -->
+        <main>
+            <section class="card" id="source-section">
+                <h2>1. Choose Source Spreadsheet</h2>
+                <div class="form-group">
+                    <label for="source-select">Spreadsheet:</label>
+                    <select id="source-select" disabled>
+                        <option value="">-- Sign in first --</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="tab-select">Sheet/Tab:</label>
+                    <select id="tab-select" disabled>
+                        <option value="">-- Select Spreadsheet --</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="range-input">Range (e.g., A1:Z1000):</label>
+                    <input type="text" id="range-input" value="A1:Z1000" disabled>
+                </div>
+                <button id="load" class="btn btn-primary" disabled>Load Data into DuckDB</button>
+                <div id="load-status" class="status-indicator" style="display: none;"></div>
+            </section>
 
-<button id="login-button">🔐 Sign in with Google</button>
+            <section class="card" id="query-section">
+                <h2>2. Run SQL Query</h2>
 
- 
-<h2>Choose Source Spreadsheet</h2>
-<select id="source-select"></select><br><br>
+                <!-- NEW: Column Names Area -->
+                <div id="column-names-area" style="display: none; margin-bottom: 15px;">
+                    <label>Available Columns:</label>
+                    <div class="column-display">
+                        <pre id="column-names-list"></pre>
+                        <button id="copy-columns-button" class="btn btn-sm btn-outline" title="Copy column names">📋 Copy</button>
+                    </div>
+                </div>
+                <!-- END NEW -->
 
-<label for="sheet-tab">Choose Tab:</label>
-<select id="tab-select"></select><br><br>
+                <div class="form-group">
+                    <label for="sql">SQL Query (on table 'sheet_data'):</label>
+                    <textarea id="sql" rows="6" cols="60">SELECT * FROM sheet_data;</textarea>
+                </div>
+                <button id="run" class="btn btn-success" disabled>Run Query</button>
+                <div id="query-status" class="status-indicator" style="display: none;"></div>
+                <div id="output"></div>
+            </section>
 
-<label for="range-input">Enter Range (e.g., A1:Z100):</label>
-<input type="text" id="range-input" value="A1:Z100"><br><br>
+            <section class="card" id="destination-section">
+                <h2>3. Save Results to Google Sheets</h2>
+                 <div class="form-group">
+                    <label for="dest-select">Destination Spreadsheet:</label>
+                    <select id="dest-select" disabled>
+                         <option value="">-- Select or Create --</option>
+                    </select>
+                </div>
+                <div class="button-group">
+                    <button id="create-dest" class="btn btn-secondary" disabled>Create New Spreadsheet</button>
+                    <button id="save" class="btn btn-primary" disabled>Save Results to New Tab</button>
+                </div>
+                 <div id="save-status" class="status-indicator" style="display: none;"></div>
+            </section>
+        </main>
 
-<button id="load">Load Sheet</button>
-
-
-
-
-  <h2>SQL Query</h2>
-  <textarea id="sql" rows="5" cols="60">SELECT * FROM sheet_data;</textarea>
-  <button id="run">Run Query</button>
-  <pre id="output"></pre>
-
-  <h2>Choose or Create Destination</h2>
-  <select id="dest-select"></select>
-  <button id="create-dest">Create New Spreadsheet</button>
-  <button id="save">Save Results</button>
+        <footer>
+            <p>Powered by DuckDB-WASM & Google APIs</p>
+        </footer>
+    </div>
 </body>
 </html>
-

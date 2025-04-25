@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>DuckDB + Google Sheets</title>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script type="module" src="main.js?v=36"></script>
+</head>
+<body>
+  <h1>DuckDB + Google Sheets</h1>
+
+  <!-- Google Sign-In Button -->
+
+<button id="login-button">🔐 Sign in with Google</button>
+
+ 
+<h2>Choose Source Spreadsheet</h2>
+<select id="source-select"></select><br><br>
+
+<label for="sheet-tab">Choose Tab:</label>
+<select id="tab-select"></select><br><br>
+
+<label for="range-input">Enter Range (e.g., A1:Z100):</label>
+<input type="text" id="range-input" value="A1:Z100"><br><br>
+
+<button id="load">Load Sheet</button>
+
+
+
+
+  <h2>SQL Query</h2>
+  <textarea id="sql" rows="5" cols="60">SELECT * FROM sheet_data;</textarea>
+  <button id="run">Run Query</button>
+  <pre id="output"></pre>
+
+  <h2>Choose or Create Destination</h2>
+  <select id="dest-select"></select>
+  <button id="create-dest">Create New Spreadsheet</button>
+  <button id="save">Save Results</button>
+</body>
+</html>
+
