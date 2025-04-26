@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Data Analysis with Pyodide, DuckDB & yfinance</title>
+    <style>
+        /* CSS styles remain the same */
+        body { font-family: sans-serif; line-height: 1.6; padding: 20px; }
+        #status, #errorLog { margin-top: 15px; padding: 10px; border-radius: 5px; }
+        #status { background-color: #e0e0e0; }
+        #errorLog { background-color: #ffdddd; color: #a00; white-space: pre-wrap; }
+        textarea { width: 95%; min-height: 100px; margin-top: 5px; font-family: monospace;}
+        table { border-collapse: collapse; margin-top: 15px; width: 100%; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        button { padding: 8px 15px; margin-right: 10px; cursor: pointer; }
+        input[type="text"] { padding: 8px; margin-right: 5px; }
+        .controls, .query-section { margin-bottom: 20px; }
+        .hidden { display: none; }
+    </style>
+
+    <!-- *** Load DuckDB WASM JS - MODIFIED FOR LOCAL WORKER/WASM *** -->
+    <script type="module">
+        // Still load the main ESM module from CDN
+        import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm';
+
+        // --- Specify paths to LOCAL files ---
+        // These must be in the same directory as index.html
+        const WasmPath = './duckdb-mvp.wasm';
+        const WorkerPath = './duckdb-browser-mvp.worker.js';
+        // --- ---
+
+        try {
+            console.log(`Attempting to load DuckDB worker from: ${WorkerPath}`);
+            const worker = new Worker(WorkerPath); // Load worker from local path
+
+            const logger = new duckdb.ConsoleLogger();
+            const db = new duckdb.AsyncDuckDB(logger, worker);
+
+            console.log(`Attempting to instantiate DuckDB WASM from: ${WasmPath}`);
+            // Instantiate with local WASM module path. Pass null for pthreadWorker (not needed for mvp)
+            await db.instantiate(WasmPath, null);
+
+            // Make the db instance globally accessible (optional, but can help Python find it)
+            window.duckDBInstance = db;
+            console.log("DuckDB WASM JS Initialized (using local files)");
+
+        } catch (e) {
+            console.error("Error initializing DuckDB WASM JS:", e);
+            // Display error to user
+            const statusDiv = document.getElementById('status');
+            const errorLogDiv = document.getElementById('errorLog');
+            if (statusDiv) statusDiv.classList.add('hidden');
+            if (errorLogDiv) {
+                errorLogDiv.textContent = `Critical Error: Failed to initialize DuckDB WASM. Check console. Error: ${e.message || e}`;
+                errorLogDiv.classList.remove('hidden');
+            }
+            // Prevent further execution if DuckDB fails
+            throw new Error("DuckDB WASM failed to load.");
+        }
+    </script>
+    <!-- *** END DUCKDB SECTION *** -->
+
+
+    <!-- Load Pyodide -->
+        <script src="https://cdn.jsdelivr.net/pyodide/v0.27.5/full/pyodide.js"></script>
+
+</head>
+<body>
+
+    <h1>Stock Data Analysis in the Browser</h1>
+    <p>Using Pyodide, DuckDB WASM, and yfinance</p>
+
+    <div id="status">Loading DuckDB JS...</div> <!-- Initial status -->
+    <div id="errorLog" class="hidden"></div>
+
+    <div class="controls hidden">
+        <label for="ticker">Stock Ticker:</label>
+        <input type="text" id="ticker" value="AAPL">
+        <button id="fetchButton">Fetch & Load Data</button>
+        <span id="fetchStatus"></span>
+    </div>
+
+    <div class="query-section hidden">
+        <h2>Query Stock Data (Table: stock_data)</h2>
+        <p>Enter your SQL query below. Example: <code>SELECT Date, Open, High, Low, Close FROM stock_data WHERE Date > '2023-01-01' ORDER BY Date DESC LIMIT 10</code></p>
+        <textarea id="sqlQuery" placeholder="SELECT * FROM stock_data LIMIT 5;"></textarea><br>
+        <button id="runQueryButton">Run SQL Query</button>
+        <span id="queryStatus"></span>
+    </div>
+
+    <h2>Query Results</h2>
+    <div id="resultsTableContainer">
+        <p>Waiting for initialization...</p>
+    </div>
+
+    <script>
+        const statusDiv = document.getElementById('status');
+        const errorLogDiv = document.getElementById('errorLog');
+        const controlsDiv = document.querySelector('.controls');
+        const querySectionDiv = document.querySelector('.query-section');
+        const tickerInput = document.getElementById('ticker');
+        const fetchButton = document.getElementById('fetchButton');
+        const fetchStatusSpan = document.getElementById('fetchStatus');
+        const sqlQueryTextarea = document.getElementById('sqlQuery');
+        const runQueryButton = document.getElementById('runQueryButton');
+        const queryStatusSpan = document.getElementById('queryStatus');
+        const resultsTableContainer = document.getElementById('resultsTableContainer');
+
+        let pyodide = null;
+        let isLoading = false;
+        let pyFetchAndLoad = null;
+        let pyRunSQLQuery = null;
+
+        function showStatus(message) {
+            console.log(message);
+            statusDiv.textContent = message;
+            statusDiv.classList.remove('hidden');
+            errorLogDiv.classList.add('hidden');
+        }
+
+        function showError(error) {
+            console.error("showError called with:", error);
+            let message = 'An unknown error occurred.';
+            if (error instanceof Error) {
+                message = error.message;
+                if (error.stack) {
+                    message += '\n' + error.stack;
+                }
+            } else if (typeof error === 'string') {
+                message = error;
+            } else if (error && error.message) {
+                 message = error.message;
+                 if(error.stack) message += '\n' + error.stack;
+            } else {
+                 try { message = JSON.stringify(error); } catch (e) { /* ignore */ }
+            }
+            errorLogDiv.textContent = `Error: ${message}`;
+            errorLogDiv.classList.remove('hidden');
+            statusDiv.classList.add('hidden');
+        }
+
+        function displayResults(data) {
+            // displayResults function remains the same
+            resultsTableContainer.innerHTML = '';
+            if (!data || !Array.isArray(data) || data.length === 0) {
+                resultsTableContainer.innerHTML = '<p>Query returned no results.</p>';
+                return;
+            }
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+            const tbody = document.createElement('tbody');
+            const headerRow = document.createElement('tr');
+            const headers = Object.keys(data[0]);
+            headers.forEach(headerText => {
+                const th = document.createElement('th');
+                th.textContent = headerText;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            data.forEach(rowData => {
+                const row = document.createElement('tr');
+                headers.forEach(header => {
+                    const td = document.createElement('td');
+                    let value = rowData[header];
+                     if (value instanceof Date) {
+                         td.textContent = value.toISOString().split('T')[0];
+                     } else if (typeof value === 'number' && value > 1e12 && value < 3e12) {
+                         try { td.textContent = new Date(value).toISOString().split('T')[0]; } catch(e) { td.textContent = value; }
+                     } else {
+                         td.textContent = value !== null && value !== undefined ? value : '';
+                     }
+                    row.appendChild(td);
+                });
+                tbody.appendChild(row);
+            });
+            table.appendChild(thead);
+            table.appendChild(tbody);
+            resultsTableContainer.appendChild(table);
+        }
+
+        function setLoadingState(loading, operation) {
+            // setLoadingState function remains the same
+            isLoading = loading;
+            fetchButton.disabled = loading;
+            runQueryButton.disabled = loading;
+            tickerInput.disabled = loading;
+            sqlQueryTextarea.disabled = loading;
+            if (operation === 'fetch') { fetchStatusSpan.textContent = loading ? 'Processing...' : ''; }
+            else if (operation === 'query') { queryStatusSpan.textContent = loading ? 'Running...' : ''; }
+        }
+
+        // --- Main Pyodide Initialization ---
+        async function main() {
+            // DuckDB JS initialization now happens in the <script type="module"> above.
+            showStatus("DuckDB JS Loaded. Loading Pyodide engine...");
+
+            try {
+                pyodide = await loadPyodide(); // Using v0.27.5 from script tag
+                showStatus("Pyodide loaded. Loading micropip...");
+                await pyodide.loadPackage("micropip");
+                const micropip = pyodide.pyimport("micropip");
+
+                // --- Load Core Dependencies ---
+                showStatus("Loading core Python packages (pandas, requests, lxml)...");
+                await pyodide.loadPackage(['pandas', 'requests', 'lxml']);
+
+                showStatus("Loading Python duckdb wrapper module...");
+                try {
+                    await pyodide.loadPackage('duckdb'); // This worked in v0.27.5
+                    console.log("Python duckdb wrapper module loaded successfully.");
+                } catch(err) {
+                    console.error("Failed to load Python duckdb wrapper via loadPackage:", err);
+                    showError("Error: Failed to explicitly load Python duckdb wrapper. Cannot proceed.");
+                    return;
+                }
+                // --- ---
+
+                // *** Install yfinance from PyPI using micropip ***
+                showStatus("Installing yfinance from PyPI via micropip...");
+                try {
+                    // This is the standard way - should work now that dependencies are loaded
+                    await micropip.install('yfinance', { keep_going: true });
+                    console.log("yfinance installed from PyPI.");
+                } catch (err) {
+                    console.error("Failed to install yfinance from PyPI via micropip:", err);
+                    showError("Error: Failed to install yfinance from PyPI.");
+                    return; // Stop if yfinance cannot be installed
+                }
+                // *** --- ***
+
+
+                showStatus("Packages loaded. Initializing Python environment...");
+
+                // --- Python Code (remains the same) ---
+                await pyodide.runPythonAsync(`
+                    import micropip
+                    import duckdb
+                    import yfinance as yf # This import should now work
+                    import pandas as pd
+                    import io
+                    from js import console, window
+                    import traceback
+
+                    db_connection = None
+                    current_ticker = None
+
+                    def get_db_connection():
+                        global db_connection
+                        if db_connection is None:
+                            try:
+                                console.log("Initializing DuckDB Python connection...")
+                                db_connection = duckdb.connect(database=':memory:', read_only=False)
+                                console.log("DuckDB Python connection established.")
+                            except Exception as e:
+                                console.error(f"Failed to connect Python duckdb: {e}")
+                                console.error(traceback.format_exc())
+                                raise e
+                        return db_connection
+
+                    # --- fetch_and_load_stock_data and run_sql_query functions remain the same ---
+                    def fetch_and_load_stock_data(ticker_symbol):
+                        global current_ticker
+                        if not ticker_symbol: return {"error": "Ticker symbol cannot be empty."}
+                        console.log(f"Attempting to fetch data for: {ticker_symbol}")
+                        try:
+                            stock = yf.Ticker(ticker_symbol)
+                            hist_df = stock.history(period="5y")
+                            if hist_df.empty: return {"error": f"No data found for ticker {ticker_symbol}."}
+                            hist_df = hist_df.reset_index()
+                            if pd.api.types.is_datetime64_any_dtype(hist_df['Date']):
+                                if hist_df['Date'].dt.tz is not None:
+                                     console.log("Converting timezone-aware Date to UTC naive...")
+                                     hist_df['Date'] = hist_df['Date'].dt.tz_convert(None)
+                            hist_df.columns = hist_df.columns.str.replace(' ', '_').str.replace('[^A-Za-z0-9_]+', '', regex=True)
+                            if 'index' in hist_df.columns and 'Date' not in hist_df.columns: hist_df = hist_df.rename(columns={'index': 'Date'})
+                            elif 'Datetime' in hist_df.columns and 'Date' not in hist_df.columns: hist_df = hist_df.rename(columns={'Datetime': 'Date'})
+                            console.log(f"Data fetched successfully. Shape: {hist_df.shape}")
+                            con = get_db_connection()
+                            con.register('stock_df_view', hist_df)
+                            con.execute("CREATE OR REPLACE TABLE stock_data AS SELECT * FROM stock_df_view")
+                            con.unregister('stock_df_view')
+                            console.log(f"Data for {ticker_symbol} loaded into DuckDB table 'stock_data'.")
+                            current_ticker = ticker_symbol
+                            return {"success": True, "ticker": ticker_symbol, "rows": len(hist_df)}
+                        except Exception as e:
+                            error_message = f"Failed to fetch or load data for {ticker_symbol}: {str(e)}"
+                            console.error(error_message)
+                            console.error(traceback.format_exc())
+                            return {"error": error_message}
+
+                    def run_sql_query(sql):
+                        if not sql: return {"error": "SQL query cannot be empty."}
+                        try:
+                            con = get_db_connection()
+                            if con is None: return {"error": "Database connection not available."}
+                            console.log(f"Executing SQL: {sql}")
+                            result_df = con.execute(sql).fetchdf()
+                            results = result_df.to_dict(orient='records')
+                            console.log(f"Query successful. Rows returned: {len(results)}")
+                            return {"success": True, "data": results}
+                        except Exception as e:
+                            error_message = f"SQL query failed: {str(e)}"
+                            console.error(error_message)
+                            console.error(traceback.format_exc())
+                            return {"error": error_message}
+
+
+                    from pyodide.ffi import create_proxy
+                    js_fetch_and_load = create_proxy(fetch_and_load_stock_data)
+                    js_run_sql_query = create_proxy(run_sql_query)
+                `);
+
+                pyFetchAndLoad = pyodide.globals.get('js_fetch_and_load');
+                pyRunSQLQuery = pyodide.globals.get('js_run_sql_query');
+
+                showStatus("Ready. Enter a ticker and fetch data.");
+                controlsDiv.classList.remove('hidden');
+                resultsTableContainer.innerHTML = '<p>No query run yet.</p>';
+
+                // --- Event Listeners (remain the same, but add logging) ---
+                fetchButton.addEventListener('click', async () => {
+                    console.log("[DEBUG] Fetch button clicked!"); // <<< ADDED
+                    console.log(`[DEBUG] isLoading: ${isLoading}, pyFetchAndLoad exists: ${!!pyFetchAndLoad}`); // <<< ADDED
+
+                    if (isLoading || !pyFetchAndLoad) {
+                        console.log("[DEBUG] Exiting listener early: isLoading or pyFetchAndLoad missing."); // <<< ADDED
+                        return;
+                    }
+
+                    setLoadingState(true, 'fetch');
+                    showStatus(`Fetching data for ${tickerInput.value}...`);
+                    resultsTableContainer.innerHTML = '<p>Loading new data...</p>';
+                    querySectionDiv.classList.add('hidden');
+
+                    try {
+                        console.log("[DEBUG] Calling pyFetchAndLoad..."); // <<< ADDED
+                        const result = await pyFetchAndLoad(tickerInput.value);
+                        console.log("[DEBUG] pyFetchAndLoad returned:", result); // <<< ADDED
+
+                        // Pyodide might return a PyProxy, convert if necessary
+                        const resultJS = result.toJs ? result.toJs({ dict_converter: Object.fromEntries }) : result;
+                        console.log("[DEBUG] Converted resultJS:", resultJS); // <<< ADDED
+                        result.destroy && result.destroy(); // Clean up PyProxy if it exists
+
+                        if (resultJS.error) {
+                            console.log("[DEBUG] Result has error property:", resultJS.error); // <<< ADDED
+                            showError(resultJS.error);
+                        } else {
+                            console.log("[DEBUG] Result successful:", resultJS); // <<< ADDED
+                            showStatus(`Data for ${resultJS.ticker} loaded (${resultJS.rows} rows). Ready to query.`);
+                            querySectionDiv.classList.remove('hidden'); // Show query section
+                            if (!sqlQueryTextarea.value) { sqlQueryTextarea.value = `SELECT Date, Open, High, Low, Close, Volume FROM stock_data ORDER BY Date DESC LIMIT 10;`; }
+                            resultsTableContainer.innerHTML = '<p>Data loaded. Run a query to see results.</p>';
+                        }
+                    } catch (err) {
+                        // Use console.error for caught errors for better visibility
+                        console.error("[DEBUG] Error caught in fetchButton listener:", err); // <<< MODIFIED
+                        showError(err); // Catch errors during the async Python call or JS conversion
+                    } finally {
+                        console.log("[DEBUG] Running finally block in fetchButton listener."); // <<< ADDED
+                        setLoadingState(false, 'fetch');
+                    }
+                });
+
+                // Keep the runQueryButton listener as it was
+                runQueryButton.addEventListener('click', async () => {
+                    if (isLoading || !pyRunSQLQuery) return;
+                    setLoadingState(true, 'query');
+                    showStatus("Running SQL query...");
+                    try {
+                        const result = await pyRunSQLQuery(sqlQueryTextarea.value);
+                        const resultJS = result.toJs ? result.toJs({ dict_converter: Object.fromEntries }) : result;
+                         result.destroy && result.destroy();
+                        if (resultJS.error) { showError(resultJS.error); resultsTableContainer.innerHTML = '<p>Query failed.</p>'; }
+                        else { showStatus("Query successful."); displayResults(resultJS.data); }
+                    } catch (err) { showError(err); resultsTableContainer.innerHTML = '<p>Query failed.</p>'; }
+                    finally { setLoadingState(false, 'query'); }
+                });
+
+            } catch (error) {
+                showError(error);
+            }
+        }
+
+        // Start the application
+        main();
+
+    </script>
+
+</body>
+</html>
