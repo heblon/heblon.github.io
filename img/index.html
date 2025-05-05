@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image Editor with Polygon Cut</title>
+  <style>
+    canvas {
+      border: 1px solid #ccc;
+      cursor: crosshair;
+      background-image: linear-gradient(45deg, #eee 25%, transparent 25%),
+                        linear-gradient(-45deg, #eee 25%, transparent 25%),
+                        linear-gradient(45deg, transparent 75%, #eee 75%),
+                        linear-gradient(-45deg, transparent 75%, #eee 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    }
+    #controls {
+      margin-top: 1rem;
+    }
+    .label {
+      position: absolute;
+      background: #333;
+      color: white;
+      padding: 2px 4px;
+      font-size: 12px;
+      border-radius: 3px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <h2>Upload and Edit Image</h2>
+  <input type="file" id="upload" accept="image/*" />
+  <br><br>
+  <div style="position: relative; display: inline-block;">
+    <canvas id="canvas" width="800" height="600" tabindex="0"></canvas>
+    <div id="lineLabel" class="label" style="display: none;"></div>
+  </div>
+  <div id="controls">
+    <button id="zoomIn">Zoom In</button>
+    <button id="zoomOut">Zoom Out</button>
+    <button id="startPolygon">Start Polygon</button>
+    <button id="cutInside">Cut Inside Polygon</button>
+    <button id="cutOutside">Cut Outside Polygon</button>
+    <button id="applyCrop">Apply Crop</button>
+    <button id="reset">Reset</button>
+    <button id="save">Save PNG</button>
+    <button id="togglePolygon">Toggle Polygon Border</button>
+    <button id="toggleCrop">Toggle Crop Borders</button>
+    <label>Border Color: <input type="color" id="polygonColor" value="#ff0000"></label>
+    <label>Border Width: <input type="number" id="polygonWidth" value="2" min="0" max="20"></label>
+  </div>
+
+  <script>
+    const upload = document.getElementById('upload');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const label = document.getElementById('lineLabel');
+
+    let img = new Image();
+    let imgDataURL = null;
+    let scale = 1;
+    let polygon = [];
+    let drawingPolygon = false;
+
+    let cropLines = { left: 100, right: 700, top: 100, bottom: 500 };
+    let draggingLine = null;
+    let selectedLine = 'left';
+    const handleSize = 10;
+    let hoveredHandle = null;
+
+    let showPolygon = true;
+    let showCrop = true;
+
+    function drawHandle(x, y, isHovered = false, isSelected = false) {
+      ctx.fillStyle = isSelected ? 'green' : isHovered ? 'orange' : 'blue';
+      ctx.fillRect(x - handleSize / 2, y - handleSize / 2, handleSize, handleSize);
+    }
+
+    function isNear(x, y, cx, cy, size) {
+      return Math.abs(x - cx) <= size / 2 && Math.abs(y - cy) <= size / 2;
+    }
+
+    function getHoveredHandle(x, y) {
+      const midY = canvas.height / 2;
+      const midX = canvas.width / 2;
+      if (isNear(x, y, cropLines.left, midY, handleSize)) return 'left';
+      if (isNear(x, y, cropLines.right, midY, handleSize)) return 'right';
+      if (isNear(x, y, midX, cropLines.top, handleSize)) return 'top';
+      if (isNear(x, y, midX, cropLines.bottom, handleSize)) return 'bottom';
+      return null;
+    }
+
+    function drawLabel() {
+      if (!selectedLine || !showCrop) {
+        label.style.display = 'none';
+        return;
+      }
+      let x = 0, y = 0;
+      if (selectedLine === 'left') {
+        x = cropLines.left;
+        y = canvas.height / 2;
+      } else if (selectedLine === 'right') {
+        x = cropLines.right;
+        y = canvas.height / 2;
+      } else if (selectedLine === 'top') {
+        x = canvas.width / 2;
+        y = cropLines.top;
+      } else if (selectedLine === 'bottom') {
+        x = canvas.width / 2;
+        y = cropLines.bottom;
+      }
+      label.style.left = `${canvas.offsetLeft + x + 10}px`;
+      label.style.top = `${canvas.offsetTop + y - 10}px`;
+      label.textContent = selectedLine.toUpperCase();
+      label.style.display = 'block';
+    }
+
+    function draw() {
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      if (showCrop) {
+        ctx.strokeStyle = 'blue';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(cropLines.left, 0);
+        ctx.lineTo(cropLines.left, canvas.height);
+        ctx.moveTo(cropLines.right, 0);
+        ctx.lineTo(cropLines.right, canvas.height);
+        ctx.moveTo(0, cropLines.top);
+        ctx.lineTo(canvas.width, cropLines.top);
+        ctx.moveTo(0, cropLines.bottom);
+        ctx.lineTo(canvas.width, cropLines.bottom);
+        ctx.stroke();
+
+        drawHandle(cropLines.left, canvas.height / 2, hoveredHandle === 'left', selectedLine === 'left');
+        drawHandle(cropLines.right, canvas.height / 2, hoveredHandle === 'right', selectedLine === 'right');
+        drawHandle(canvas.width / 2, cropLines.top, hoveredHandle === 'top', selectedLine === 'top');
+        drawHandle(canvas.width / 2, cropLines.bottom, hoveredHandle === 'bottom', selectedLine === 'bottom');
+      }
+
+      drawLabel();
+
+      if (showPolygon && polygon.length) {
+        ctx.beginPath();
+        ctx.moveTo(polygon[0].x, polygon[0].y);
+        polygon.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+        ctx.closePath();
+
+        const borderColor = document.getElementById('polygonColor')?.value || 'red';
+        const borderWidth = parseFloat(document.getElementById('polygonWidth')?.value) || 2;
+
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = borderWidth;
+        ctx.stroke();
+      }
+    }
+
+    function updateCanvasToImage() {
+      const newImage = new Image();
+      newImage.onload = () => {
+        img = newImage;
+        scale = 1;
+        draw();
+      };
+      newImage.src = canvas.toDataURL();
+    }
+
+    function clipPolygon(inside = true) {
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvas.width;
+      tempCanvas.height = canvas.height;
+      const tempCtx = tempCanvas.getContext('2d');
+
+      // Draw current canvas content
+      tempCtx.drawImage(canvas, 0, 0);
+
+      tempCtx.beginPath();
+      tempCtx.moveTo(polygon[0].x, polygon[0].y);
+      polygon.slice(1).forEach(p => tempCtx.lineTo(p.x, p.y));
+      tempCtx.closePath();
+
+      tempCtx.save();
+      tempCtx.globalCompositeOperation = inside ? 'destination-in' : 'destination-out';
+      tempCtx.fillStyle = 'black';
+      tempCtx.fill();
+      tempCtx.restore();
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(tempCanvas, 0, 0);
+      updateCanvasToImage();
+    }
+
+    upload.addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const newImg = new Image();
+        newImg.onload = () => {
+          img = newImg;
+          scale = 1;
+          imgDataURL = reader.result;
+          draw();
+        };
+        newImg.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    document.getElementById('zoomIn').onclick = () => { scale *= 1.2; draw(); };
+    document.getElementById('zoomOut').onclick = () => { scale /= 1.2; draw(); };
+    document.getElementById('startPolygon').onclick = () => { polygon = []; drawingPolygon = true; };
+    document.getElementById('cutInside').onclick = () => clipPolygon(true);
+    document.getElementById('cutOutside').onclick = () => clipPolygon(false);
+    document.getElementById('applyCrop').onclick = () => {
+      const w = cropLines.right - cropLines.left;
+      const h = cropLines.bottom - cropLines.top;
+      const data = ctx.getImageData(cropLines.left, cropLines.top, w, h);
+      canvas.width = w;
+      canvas.height = h;
+      ctx.putImageData(data, 0, 0);
+      updateCanvasToImage();
+    };
+    document.getElementById('reset').onclick = () => {
+      if (imgDataURL) {
+        img.src = imgDataURL;
+        polygon = [];
+        cropLines = { left: 100, right: 700, top: 100, bottom: 500 };
+        drawingPolygon = false;
+        draw();
+      }
+    };
+
+    document.getElementById('save').onclick = () => {
+      draw(); // current visibility state
+      const link = document.createElement('a');
+      link.download = 'edited.png';
+      link.href = canvas.toDataURL();
+      link.click();
+    };
+
+    document.getElementById('togglePolygon').onclick = () => {
+      showPolygon = !showPolygon;
+      draw();
+    };
+
+    document.getElementById('toggleCrop').onclick = () => {
+      showCrop = !showCrop;
+      draw();
+    };
+
+    canvas.addEventListener('click', e => {
+      if (!drawingPolygon) return;
+      const rect = canvas.getBoundingClientRect();
+      polygon.push({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+      draw();
+    });
+
+    canvas.addEventListener('mousedown', e => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      draggingLine = getHoveredHandle(x, y);
+    });
+
+    canvas.addEventListener('mousemove', e => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      hoveredHandle = getHoveredHandle(x, y);
+      if (draggingLine) {
+        if (draggingLine === 'left' || draggingLine === 'right') cropLines[draggingLine] = x;
+        else cropLines[draggingLine] = y;
+      }
+      draw();
+    });
+
+    canvas.addEventListener('mouseup', () => draggingLine = null);
+    canvas.addEventListener('keydown', e => {
+      const step = 5;
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const order = ['left', 'right', 'top', 'bottom'];
+        selectedLine = order[(order.indexOf(selectedLine) + 1) % order.length];
+      } else if (e.key.includes('Arrow')) {
+        if (selectedLine === 'left' || selectedLine === 'right') {
+          if (e.key === 'ArrowLeft') cropLines[selectedLine] -= step;
+          else if (e.key === 'ArrowRight') cropLines[selectedLine] += step;
+        } else {
+          if (e.key === 'ArrowUp') cropLines[selectedLine] -= step;
+          else if (e.key === 'ArrowDown') cropLines[selectedLine] += step;
+        }
+      }
+      draw();
+    });
+
+    canvas.focus();
+  </script>
+</body>
+</html>
