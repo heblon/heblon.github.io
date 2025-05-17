@@ -1,0 +1,214 @@
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    margin: 0;
+    padding: 20px;
+    background-color: #f4f7f6;
+    color: #333;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+main#container {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    width: 90%;
+    max-width: 1000px;
+}
+
+.video-section {
+    display: flex;
+    justify-content: space-around;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    gap: 15px;
+}
+
+.video-wrapper {
+    position: relative; /* For crop overlay */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.video-wrapper video,
+.video-wrapper canvas {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    max-width: 360px; /* Increased max-width a bit */
+    max-height: 270px;
+    background-color: #000; /* Black background for video elements */
+}
+
+.video-wrapper label {
+    margin-top: 5px;
+    font-size: 0.9em;
+    color: #555;
+}
+
+.controls-section, .edit-parameters-section {
+    margin-bottom: 25px;
+    padding: 15px;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background-color: #fdfdfd;
+}
+
+.controls-section h3, .edit-parameters-section h3 {
+    margin-top: 0;
+    color: #007bff;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+}
+
+button {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.95em;
+    transition: background-color 0.2s ease-in-out;
+    margin: 5px;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+button:disabled {
+    background-color: #c0c0c0;
+    cursor: not-allowed;
+}
+
+input[type="checkbox"] {
+    margin-left: 5px;
+    vertical-align: middle;
+}
+
+.edit-parameters-section label {
+    display: inline-block;
+    width: 100px;
+    margin-bottom: 8px;
+}
+
+.edit-parameters-section input[type="number"] {
+    width: 70px;
+    padding: 6px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    margin-bottom: 8px;
+}
+
+#statusMessage { /* Replaces errorMsg for general status */
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: 4px;
+    font-weight: bold;
+    min-height: 20px; /* Ensure space even when empty */
+}
+
+.status-info {
+    color: #007bff;
+    background-color: #e7f3ff;
+    border: 1px solid #b3d7ff;
+}
+
+.status-error {
+    color: #D8000C;
+    background-color: #FFD2D2;
+    border: 1px solid #ffb8b8;
+}
+
+.status-success {
+    color: #270;
+    background-color: #DFF2BF;
+    border: 1px solid #bde092;
+}
+
+/* Crop Overlay Styles */
+#cropOverlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%; /* Will be set by JS to match canvas */
+    height: 100%; /* Will be set by JS to match canvas */
+    cursor: crosshair;
+    z-index: 10;
+    /* border: 1px dashed red; */ /* For debugging */
+}
+
+.crop-handle {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background-color: rgba(255, 0, 0, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    cursor: grab;
+}
+
+.crop-handle:active {
+    cursor: grabbing;
+}
+
+#cropBox {
+    position: absolute;
+    border: 2px dashed red;
+    pointer-events: none; /* Allows clicks to pass through to handles/video if needed */
+    box-sizing: border-box;
+}
+
+/* Simple Loader Animation (Optional - can be enhanced) */
+.loader {
+    border: 4px solid #f3f3f3; /* Light grey */
+    border-top: 4px solid #007bff; /* Blue */
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    animation: spin 1s linear infinite;
+    display: inline-block;
+    margin-left: 10px;
+    vertical-align: middle;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Progress Bar Styles */
+.progress-section {
+    margin-top: 20px;
+    padding: 15px;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background-color: #fdfdfd;
+}
+
+.progress-section h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    color: #333;
+}
+
+.progress-bar-container {
+    width: 100%;
+    background-color: #e9ecef;
+    border-radius: .25rem;
+    height: 20px;
+    margin-bottom: 8px;
+}
+
+.progress-bar-fill {
+    width: 0%; /* Initial width */
+    height: 100%;
+    background-color: #007bff;
+    border-radius: .25rem;
+    transition: width 0.1s linear; /* Smooth transition for width changes */
+}
+
+.progress-text, .progress-subtext { font-size: 0.9em; color: #555; }

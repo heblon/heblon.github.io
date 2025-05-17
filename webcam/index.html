@@ -1,0 +1,75 @@
+<html>
+<head>
+  <title>Video Maker with Editing</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@3.11.0/dist/tf-core.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@3.11.0/dist/tf-converter.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@3.11.0/dist/tf-backend-webgl.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.0/dist/ffmpeg.min.js"></script>
+</head>
+<body>
+<main id="container">
+    <h1>Webcam Video Maker</h1>
+
+    <div class="video-section">
+        <div class="video-wrapper">
+            <label for="processedGum">Live Preview / Crop Area</label>
+            <video id="gum" playsinline autoplay muted style="display: none;"></video> <!-- Hidden source video -->
+            <canvas id="processedGum"></canvas> <!-- Visible processed video -->
+            <div id="cropOverlay">
+                <div id="cropBox"></div>
+                <!-- Handles will be added by JS -->
+            </div>
+            <div>Live Dimensions: <span id="liveWidth">N/A</span>x<span id="liveHeight">N/A</span></div>
+        </div>
+        <div class="video-wrapper">
+            <label for="recorded">Recorded / Edited Video</label>
+            <video id="recorded" playsinline loop controls></video>
+        </div>
+    </div>
+
+    <div class="controls-section">
+        <h3>Controls</h3>
+        <button id="start">Start Camera</button>
+        <label for="blurToggle">Blur Background:</label>
+        <input type="checkbox" id="blurToggle" disabled>
+        <label for="blurAmountSlider" style="margin-left: 10px;">Intensity:</label>
+        <input type="range" id="blurAmountSlider" min="0" max="20" value="6" step="1" disabled style="vertical-align: middle;">
+        <br>
+        <button id="record" disabled>Record</button>
+        <button id="play" disabled>Play Original</button>
+        <button id="applyEdits" disabled>Apply Edits & Play</button>
+    </div>
+
+    <div class="edit-parameters-section">
+        <h3>Edit Parameters</h3>
+        <div>
+            <label for="t0">Time Start (s):</label><input type="number" id="t0" value="0" step="0.1">
+            <label for="t1">Time End (s):</label><input type="number" id="t1" value="5" step="0.1">
+        </div>
+        <div>
+            <label for="cropX">Crop X:</label><input type="number" id="cropX" value="0" readonly>
+            <label for="cropY">Crop Y:</label><input type="number" id="cropY" value="0" readonly>
+        </div>
+        <div>
+            <label for="cropW">Crop Width:</label><input type="number" id="cropW" value="320" readonly>
+            <label for="cropH">Crop Height:</label><input type="number" id="cropH" value="240" readonly>
+        </div>
+    </div>
+
+    <div id="statusMessage">Welcome! Click "Start Camera" to begin.</div>
+
+    <div class="progress-section" id="ffmpegProgressSection" style="display: none;">
+        <h4>Editing Progress</h4>
+        <div class="progress-bar-container">
+            <div id="ffmpegProgressBar" class="progress-bar-fill"></div>
+        </div>
+        <div id="ffmpegProgressText" class="progress-text">0%</div>
+        <div id="ffmpegProgressTime" class="progress-subtext">Processed: 0.0s</div>
+    </div>
+
+  </main>
+  <script src="main.js"></script> <!-- Moved to end of body, defer removed -->
+</body>
+</html>
